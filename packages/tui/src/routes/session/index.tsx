@@ -57,6 +57,7 @@ import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
+import { createAppear, createRevealText, finishReveals, revealPending } from "../../util/reveal"
 import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
 import stripAnsi from "strip-ansi"
@@ -140,6 +141,7 @@ const sessionBindingCommands = [
   "session.parent",
   "session.child.next",
   "session.child.previous",
+  "session.skip_reveal",
 ] as const
 
 const sessionGlobalBindingCommands = [
@@ -166,6 +168,8 @@ const context = createContext<{
   providers: () => ReadonlyMap<string, Provider>
   sync: ReturnType<typeof useSync>
   tui: ReturnType<typeof useTuiConfig>
+  streamAnimation: () => boolean
+  streamAnimationCps: () => number
 }>()
 
 function use() {
@@ -462,7 +466,62 @@ export function Session() {
     }
   }
 
+  const finishOnInteraction = () => {
+    if (kv.get("stream_finish_on_interaction", true)) finishReveals()
+  }
+
+  const streamAnimationCps = () => kv.get("stream_animation_cps", tuiConfig.stream_animation_cps)
+
   const sessionCommandList = createMemo(() => [
+    {
+      title: "Finish streaming animation",
+      value: "session.skip_reveal",
+      category: "Session",
+      slash: {
+        name: "reveal",
+      },
+      run: () => finishReveals(),
+    },
+    {
+      title: kv.get("stream_finish_on_interaction", true)
+        ? "Disable finish streaming on interaction"
+        : "Enable finish streaming on interaction",
+      value: "session.toggle.stream_finish_on_interaction",
+      category: "Session",
+      run: () => {
+        kv.set("stream_finish_on_interaction", !kv.get("stream_finish_on_interaction", true))
+        dialog.clear()
+      },
+    },
+    {
+      title: kv.get("stream_animation", tuiConfig.stream_animation)
+        ? "Disable stream animation"
+        : "Enable stream animation",
+      value: "session.toggle.stream_animation",
+      category: "Session",
+      run: () => {
+        kv.set("stream_animation", !kv.get("stream_animation", tuiConfig.stream_animation))
+        dialog.clear()
+      },
+    },
+    {
+      title: `Slower stream animation (${Math.round(streamAnimationCps())} cps)`,
+      value: "session.stream_animation.slower",
+      category: "Session",
+      run: () => {
+        kv.set("stream_animation_cps", Math.max(2, Math.round(streamAnimationCps() / 2)))
+        dialog.clear()
+      },
+    },
+    {
+      title: `Faster stream animation (${Math.round(streamAnimationCps())} cps)`,
+      value: "session.stream_animation.faster",
+      category: "Session",
+      run: () => {
+        kv.set("stream_animation_cps", Math.min(320, Math.round(streamAnimationCps() * 2)))
+        dialog.clear()
+      },
+    },
     {
       title: session()?.share?.url ? "Copy share link" : "Share session",
       value: "session.share",
@@ -754,6 +813,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollBy(-scroll.height / 2)
         dialog.clear()
       },
@@ -764,6 +824,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollBy(scroll.height / 2)
         dialog.clear()
       },
@@ -774,6 +835,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollBy(-1)
         dialog.clear()
       },
@@ -784,6 +846,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollBy(1)
         dialog.clear()
       },
@@ -794,6 +857,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollBy(-scroll.height / 4)
         dialog.clear()
       },
@@ -804,6 +868,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollBy(scroll.height / 4)
         dialog.clear()
       },
@@ -814,6 +879,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollTo(0)
         dialog.clear()
       },
@@ -824,6 +890,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         scroll.scrollTo(scroll.scrollHeight)
         dialog.clear()
       },
@@ -834,6 +901,7 @@ export function Session() {
       category: "Session",
       hidden: true,
       run: () => {
+        finishOnInteraction()
         const messages = sync.data.message[route.sessionID]
         if (!messages || !messages.length) return
 
@@ -1172,6 +1240,8 @@ export function Session() {
           providers,
           sync,
           tui: tuiConfig,
+          streamAnimation: () => kv.get("stream_animation", tuiConfig.stream_animation),
+          streamAnimationCps: () => kv.get("stream_animation_cps", tuiConfig.stream_animation_cps),
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
@@ -1194,6 +1264,8 @@ export function Session() {
                 stickyStart="bottom"
                 flexGrow={1}
                 scrollAcceleration={scrollAcceleration()}
+                onMouseScroll={() => finishOnInteraction()}
+                onMouseDown={() => finishOnInteraction()}
               >
                 <box height={1} />
                 <For each={messages()}>
@@ -1324,6 +1396,7 @@ export function Session() {
                       ref={bind}
                       disabled={disabled()}
                       onSubmit={() => {
+                        finishOnInteraction()
                         toBottom()
                       }}
                       sessionID={route.sessionID}
@@ -1564,6 +1637,9 @@ function AssistantMessage(props: { message: AssistantMessage; parts: Part[]; las
               <Show when={duration()}>
                 <span style={{ fg: theme.textMuted }}> · {Locale.duration(duration())}</span>
               </Show>
+              <Show when={revealPending() > 0}>
+                <span style={{ fg: theme.textMuted }}> · rendering…</span>
+              </Show>
               <Show when={props.message.error?.name === "MessageAbortedError"}>
                 <span style={{ fg: theme.textMuted }}> · interrupted</span>
               </Show>
@@ -1605,6 +1681,12 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   })
   const summary = createMemo(() => reasoningSummary(content()))
   const syntax = createSyntaxStyleMemo(() => generateSubtleSyntax(theme))
+  const streamAnimation = createMemo(() => ctx.streamAnimation())
+  const reveal = createRevealText(() => summary().body ?? "", streamAnimation, {
+    cps: () => ctx.streamAnimationCps(),
+    final: () => props.part.time.end !== undefined || props.message.time.completed !== undefined,
+  })
+  const appear = createAppear(streamAnimation)
 
   const toggle = () => {
     if (!inMinimal() || opaque()) return
@@ -1615,6 +1697,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
     <Show when={content() || opaque()}>
       <box
         ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
+        opacity={appear()}
         paddingLeft={3}
         marginTop={1}
         flexDirection="column"
@@ -1637,7 +1720,7 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
               drawUnstyledText={false}
               streaming={true}
               syntaxStyle={syntax()}
-              content={summary().body}
+              content={reveal.text()}
               conceal={ctx.conceal()}
               fg={theme.textMuted}
             />
@@ -1686,14 +1769,27 @@ function ReasoningHeader(props: {
 function TextPart(props: { last: boolean; part: TextPart; message: AssistantMessage }) {
   const ctx = use()
   const { theme, syntax } = useTheme()
+  const streamAnimation = createMemo(() => ctx.streamAnimation())
+  const content = createMemo(() => props.part.text.trim())
+  const reveal = createRevealText(content, streamAnimation, {
+    cps: () => ctx.streamAnimationCps(),
+    final: () => props.message.time.completed !== undefined,
+  })
+  const appear = createAppear(streamAnimation)
   return (
-    <Show when={props.part.text.trim()}>
-      <box ref={(el: BoxRenderable) => alwaysSeparate.add(el)} paddingLeft={3} marginTop={1} flexShrink={0}>
+    <Show when={content()}>
+      <box
+        ref={(el: BoxRenderable) => alwaysSeparate.add(el)}
+        opacity={appear()}
+        paddingLeft={3}
+        marginTop={1}
+        flexShrink={0}
+      >
         <markdown
           syntaxStyle={syntax()}
           streaming={true}
           internalBlockMode="top-level"
-          content={props.part.text.trim()}
+          content={reveal.text()}
           tableOptions={{ style: "grid" }}
           conceal={ctx.conceal()}
           fg={theme.markdownText}
@@ -1709,6 +1805,13 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
 function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMessage }) {
   const ctx = use()
   const display = createMemo(() => toolDisplay(props.part.tool))
+  const streamAnimation = createMemo(() => ctx.streamAnimation())
+  const output = createMemo(() => (props.part.state.status === "completed" ? (props.part.state.output ?? "") : ""))
+  const revealOutput = createRevealText(output, streamAnimation, {
+    cps: () => ctx.streamAnimationCps(),
+    final: () => props.part.state.status === "completed" || props.part.state.status === "error",
+  })
+  const appear = createAppear(streamAnimation)
 
   // Hide tool if showDetails is false and tool completed successfully
   const shouldHide = createMemo(() => {
@@ -1725,7 +1828,9 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
       return props.part.state.input ?? {}
     },
     get output() {
-      return props.part.state.status === "completed" ? props.part.state.output : undefined
+      if (props.part.state.status !== "completed") return undefined
+      if (props.part.state.output === undefined) return undefined
+      return revealOutput.text()
     },
     get tool() {
       return props.part.tool
@@ -1737,53 +1842,55 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
 
   return (
     <Show when={!shouldHide()}>
-      <Switch>
-        <Match when={display() === "bash"}>
-          <Shell {...toolprops} />
-        </Match>
-        <Match when={display() === "glob"}>
-          <Glob {...toolprops} />
-        </Match>
-        <Match when={display() === "read"}>
-          <Read {...toolprops} />
-        </Match>
-        <Match when={display() === "grep"}>
-          <Grep {...toolprops} />
-        </Match>
-        <Match when={display() === "webfetch"}>
-          <WebFetch {...toolprops} />
-        </Match>
-        <Match when={display() === "websearch"}>
-          <WebSearch {...toolprops} />
-        </Match>
-        <Match when={display() === "write"}>
-          <Write {...toolprops} />
-        </Match>
-        <Match when={display() === "edit"}>
-          <Edit {...toolprops} />
-        </Match>
-        <Match when={display() === "task"}>
-          <Task {...toolprops} />
-        </Match>
-        <Match when={display() === "execute"}>
-          <Execute {...toolprops} />
-        </Match>
-        <Match when={display() === "apply_patch"}>
-          <ApplyPatch {...toolprops} />
-        </Match>
-        <Match when={display() === "todowrite"}>
-          <TodoWrite {...toolprops} />
-        </Match>
-        <Match when={display() === "question"}>
-          <Question {...toolprops} />
-        </Match>
-        <Match when={display() === "skill"}>
-          <Skill {...toolprops} />
-        </Match>
-        <Match when={true}>
-          <GenericTool {...toolprops} />
-        </Match>
-      </Switch>
+      <box opacity={appear()}>
+        <Switch>
+          <Match when={display() === "bash"}>
+            <Shell {...toolprops} />
+          </Match>
+          <Match when={display() === "glob"}>
+            <Glob {...toolprops} />
+          </Match>
+          <Match when={display() === "read"}>
+            <Read {...toolprops} />
+          </Match>
+          <Match when={display() === "grep"}>
+            <Grep {...toolprops} />
+          </Match>
+          <Match when={display() === "webfetch"}>
+            <WebFetch {...toolprops} />
+          </Match>
+          <Match when={display() === "websearch"}>
+            <WebSearch {...toolprops} />
+          </Match>
+          <Match when={display() === "write"}>
+            <Write {...toolprops} />
+          </Match>
+          <Match when={display() === "edit"}>
+            <Edit {...toolprops} />
+          </Match>
+          <Match when={display() === "task"}>
+            <Task {...toolprops} />
+          </Match>
+          <Match when={display() === "execute"}>
+            <Execute {...toolprops} />
+          </Match>
+          <Match when={display() === "apply_patch"}>
+            <ApplyPatch {...toolprops} />
+          </Match>
+          <Match when={display() === "todowrite"}>
+            <TodoWrite {...toolprops} />
+          </Match>
+          <Match when={display() === "question"}>
+            <Question {...toolprops} />
+          </Match>
+          <Match when={display() === "skill"}>
+            <Skill {...toolprops} />
+          </Match>
+          <Match when={true}>
+            <GenericTool {...toolprops} />
+          </Match>
+        </Switch>
+      </box>
     </Show>
   )
 }

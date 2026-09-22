@@ -72,10 +72,19 @@ export const Info = Schema.Struct({
   diff_style: Schema.optional(DiffStyle),
   cursor: Schema.optional(Cursor),
   mouse: Schema.optional(Schema.Boolean).annotate({ description: "Enable or disable mouse capture (default: true)" }),
+  stream_animation: Schema.optional(Schema.Boolean).annotate({
+    description: "Reveal streamed text and tool output progressively instead of appearing in bursts",
+  }),
+  stream_animation_cps: Schema.optional(Schema.Number.check(Schema.isGreaterThan(0))).annotate({
+    description: "Reveal rate in characters per second for stream animation",
+  }),
 })
 export type Info = Schema.Schema.Type<typeof Info>
 
-export type Resolved = Omit<Info, "attention" | "keybinds" | "leader_timeout" | "mouse" | "cursor"> & {
+export type Resolved = Omit<
+  Info,
+  "attention" | "keybinds" | "leader_timeout" | "mouse" | "cursor" | "stream_animation" | "stream_animation_cps"
+> & {
   attention: {
     enabled: boolean
     notifications: boolean
@@ -87,6 +96,8 @@ export type Resolved = Omit<Info, "attention" | "keybinds" | "leader_timeout" | 
   keybinds: TuiKeybind.BindingLookupView
   leader_timeout: number
   mouse: boolean
+  stream_animation: boolean
+  stream_animation_cps: number
   cursor?: {
     style: "block" | "underline" | "line" | "default"
     blinking: boolean
@@ -126,6 +137,8 @@ export function resolve(input: Info, options: ResolveOptions): Resolved {
     }),
     leader_timeout: input.leader_timeout ?? LeaderTimeoutDefault,
     mouse: input.mouse ?? true,
+    stream_animation: input.stream_animation ?? false,
+    stream_animation_cps: input.stream_animation_cps ?? 20,
     cursor: input.cursor
       ? {
           style: input.cursor.style ?? "block",
