@@ -24,7 +24,14 @@ import { SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
 import { Spinner } from "../../component/spinner"
 import { createSyntaxStyleMemo, generateSubtleSyntax, selectedForeground, useTheme } from "../../context/theme"
-import { BoxRenderable, ScrollBoxRenderable, addDefaultParsers, TextAttributes, RGBA } from "@opentui/core"
+import {
+  BoxRenderable,
+  ScrollBoxRenderable,
+  addDefaultParsers,
+  TextAttributes,
+  RGBA,
+  type TerminalCapabilities,
+} from "@opentui/core"
 import { Prompt, type PromptRef } from "../../component/prompt"
 import type {
   AssistantMessage,
@@ -57,7 +64,7 @@ import { SubagentFooter } from "./subagent-footer.tsx"
 import { filetype } from "../../util/filetype"
 import parsers from "../../parsers-config"
 import { errorMessage } from "../../util/error"
-import { createAppear, createRevealText, finishReveals, revealPending } from "../../util/reveal"
+import { createAppear, createRevealText, fadeAllowed, finishReveals, revealPending } from "../../util/reveal"
 import { Toast, useToast } from "../../ui/toast"
 import { useKV } from "../../context/kv.tsx"
 import stripAnsi from "strip-ansi"
@@ -170,6 +177,8 @@ const context = createContext<{
   tui: ReturnType<typeof useTuiConfig>
   streamAnimation: () => boolean
   streamAnimationCps: () => number
+  streamFade: () => boolean
+  streamFrameMs: () => number
 }>()
 
 function use() {
@@ -357,6 +366,15 @@ export function Session() {
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
+  const [terminalCaps, setTerminalCaps] = createSignal<TerminalCapabilities | null>(renderer.capabilities)
+  onMount(() => {
+    const onChange = (caps: TerminalCapabilities) => setTerminalCaps(caps)
+    renderer.on("capabilities", onChange)
+    onCleanup(() => renderer.off("capabilities", onChange))
+  })
+  const remoteSession = () =>
+    Boolean(terminalCaps()?.remote) ||
+    Boolean(process.env.SSH_CONNECTION || process.env.SSH_TTY || process.env.SSH_CLIENT || process.env.MOSH_CONNECTION)
 
   event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
@@ -471,6 +489,13 @@ export function Session() {
   }
 
   const streamAnimationCps = () => kv.get("stream_animation_cps", tuiConfig.stream_animation_cps)
+  const streamFade = () =>
+    fadeAllowed({
+      animation: kv.get("stream_animation", tuiConfig.stream_animation),
+      rgb: terminalCaps()?.rgb === true,
+      remote: remoteSession(),
+    })
+  const streamFrameMs = () => (remoteSession() ? 33 : 16)
 
   const sessionCommandList = createMemo(() => [
     {
@@ -1242,6 +1267,8 @@ export function Session() {
           tui: tuiConfig,
           streamAnimation: () => kv.get("stream_animation", tuiConfig.stream_animation),
           streamAnimationCps: () => kv.get("stream_animation_cps", tuiConfig.stream_animation_cps),
+          streamFade,
+          streamFrameMs,
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
@@ -1684,9 +1711,10 @@ function ReasoningPart(props: { last: boolean; part: ReasoningPart; message: Ass
   const streamAnimation = createMemo(() => ctx.streamAnimation())
   const reveal = createRevealText(() => summary().body ?? "", streamAnimation, {
     cps: () => ctx.streamAnimationCps(),
+    frameMs: ctx.streamFrameMs(),
     final: () => props.part.time.end !== undefined || props.message.time.completed !== undefined,
   })
-  const appear = createAppear(streamAnimation)
+  const appear = createAppear(() => ctx.streamFade())
 
   const toggle = () => {
     if (!inMinimal() || opaque()) return
@@ -1773,9 +1801,10 @@ function TextPart(props: { last: boolean; part: TextPart; message: AssistantMess
   const content = createMemo(() => props.part.text.trim())
   const reveal = createRevealText(content, streamAnimation, {
     cps: () => ctx.streamAnimationCps(),
+    frameMs: ctx.streamFrameMs(),
     final: () => props.message.time.completed !== undefined,
   })
-  const appear = createAppear(streamAnimation)
+  const appear = createAppear(() => ctx.streamFade())
   return (
     <Show when={content()}>
       <box
@@ -1809,9 +1838,10 @@ function ToolPart(props: { last: boolean; part: ToolPart; message: AssistantMess
   const output = createMemo(() => (props.part.state.status === "completed" ? (props.part.state.output ?? "") : ""))
   const revealOutput = createRevealText(output, streamAnimation, {
     cps: () => ctx.streamAnimationCps(),
+    frameMs: ctx.streamFrameMs(),
     final: () => props.part.state.status === "completed" || props.part.state.status === "error",
   })
-  const appear = createAppear(streamAnimation)
+  const appear = createAppear(() => ctx.streamFade())
 
   // Hide tool if showDetails is false and tool completed successfully
   const shouldHide = createMemo(() => {

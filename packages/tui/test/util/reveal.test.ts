@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import { createAppear, createRevealText, finishReveals, revealStep } from "../../src/util/reveal"
+import { createAppear, createRevealText, fadeAllowed, finishReveals, revealStep } from "../../src/util/reveal"
 
 describe("util.reveal", () => {
   describe("revealStep", () => {
@@ -127,6 +127,24 @@ describe("util.reveal", () => {
         expect(reveal.pending()).toBe(false)
         dispose()
       })
+    })
+  })
+
+  describe("fadeAllowed", () => {
+    test("allows the fade only for animation on truecolor local sessions", () => {
+      expect(fadeAllowed({ animation: true, rgb: true, remote: false })).toBe(true)
+    })
+
+    test("rejects remote sessions", () => {
+      expect(fadeAllowed({ animation: true, rgb: true, remote: true })).toBe(false)
+    })
+
+    test("rejects terminals without truecolor", () => {
+      expect(fadeAllowed({ animation: true, rgb: false, remote: false })).toBe(false)
+    })
+
+    test("rejects when animation is disabled", () => {
+      expect(fadeAllowed({ animation: false, rgb: true, remote: false })).toBe(false)
     })
   })
 

@@ -161,6 +161,12 @@ export function createRevealText(
   return { text: visible, pending, finish }
 }
 
+// The fade blends foreground/background colours, which degrades or garbles over
+// high-latency SSH links and terminals without truecolor. Keep it local-only.
+export function fadeAllowed(options: { animation: boolean; rgb: boolean; remote: boolean }): boolean {
+  return options.animation && options.rgb && !options.remote
+}
+
 // Fade a surface in on mount. Returns 1 immediately when disabled.
 export function createAppear(enabled: Accessor<boolean>, duration = 1200): Accessor<number> {
   const [alpha, setAlpha] = createSignal(1)

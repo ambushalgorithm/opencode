@@ -402,7 +402,7 @@ This is separate from `opencode.json`, which configures server/runtime behavior.
 - `diff_style` - Controls diff rendering. `"auto"` adapts to terminal width, `"stacked"` always shows a single-column layout.
 - `cursor` - Controls the terminal cursor in TUI input fields. `style` defaults to `"block"`, can be `"underline"`, `"line"`, or `"default"`; `blinking` defaults to `true`. When `style` is `"default"`, the terminal default cursor is restored, so `blinking` has no effect.
 - `mouse` - Enable or disable mouse capture in the TUI (default: `true`). When disabled, the terminal's native mouse selection/scrolling behavior is preserved.
-- `stream_animation` - Reveal streamed assistant text, reasoning, and tool output progressively instead of appearing in bursts. Defaults to `false`.
+- `stream_animation` - Reveal streamed assistant text, reasoning, and tool output progressively instead of appearing in bursts. Defaults to `false`. The accompanying fade-in is only applied on local terminals with truecolor support; over SSH the text is revealed without the fade.
 - `stream_animation_cps` - Reveal rate in characters per second when `stream_animation` is enabled. Defaults to `20`. Adjustable at runtime from the command palette ("Slower/Faster stream animation").
 - `attention` - Configures TUI desktop notifications and sounds. Disabled by default.
 
